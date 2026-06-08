@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6
+- Hardening: cap uploads at 25 MB; make the single-print guard atomic.
+- Pin the core library to the tagged release v0.1.3 (reproducible builds).
+- Add an add-on icon; expand documentation.
+
 ## 0.1.5
 - Show the printer **battery percentage** in the status panel (queried over
   Bluetooth in the same connection as the status check).

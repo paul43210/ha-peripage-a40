@@ -22,6 +22,7 @@ PROBE_TIMEOUT = 4.0
 STATUS_CACHE_TTL = 15.0
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB upload cap
 _bt_lock = threading.Lock()      # serialize ALL dongle access (print + probe)
 _job_lock = threading.Lock()
 _job = {"state": "idle", "pages": 0, "message": "", "ts": 0.0}
@@ -279,16 +280,26 @@ def api_status():
 
 @app.post("/api/print")
 def api_print():
-    if _get_job()["state"] == "printing":
-        return jsonify({"ok": False, "busy": True,
-                        "error": "A print is already in progress."}), 409
     f = request.files.get("pdf")
     if f is None or not f.filename:
         return jsonify({"ok": False, "error": "No PDF uploaded."}), 400
     fd, path = tempfile.mkstemp(suffix=".pdf")
     os.close(fd)
     f.save(path)
-    _set_job(state="printing", pages=0, message="")
+    # Atomically claim the single print slot so two requests can't race.
+    with _job_lock:
+        if _job["state"] == "printing":
+            dup = True
+        else:
+            dup = False
+            _job.update(state="printing", pages=0, message="", ts=time.time())
+    if dup:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return jsonify({"ok": False, "busy": True,
+                        "error": "A print is already in progress."}), 409
     threading.Thread(target=_worker, args=(path,), daemon=True).start()
     return jsonify({"ok": True, "started": True})
 

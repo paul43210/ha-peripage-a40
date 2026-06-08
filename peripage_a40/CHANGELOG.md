@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+- Pin the core library to a commit so rebuilds actually reinstall it
+  (a cached pip layer had kept the pre-fix core, so a sleeping printer
+  still showed as a Bluetooth error). No functional change otherwise.
+
 ## 0.1.1
 - Fix: enable `host_network` so the container can open Bluetooth (RFCOMM)
   sockets. Without the host network namespace the kernel refuses AF_BLUETOOTH

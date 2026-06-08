@@ -19,9 +19,9 @@ power/feed button to wake it and try again.
 
 ## Bluetooth notes
 The add-on talks to the host's Bluetooth adapter (the Sena UD100 dongle).
-It requests `host_dbus` plus the `NET_ADMIN`/`NET_RAW` capabilities. If RFCOMM
-cannot reach the adapter on your system, enable `host_network: true` in the
-add-on's `config.yaml` and rebuild.
+It runs with `host_network: true` (required -- AF_BLUETOOTH sockets can only be
+created in the host network namespace), plus `host_dbus` and the
+`NET_ADMIN`/`NET_RAW` capabilities.
 
 ## Status scope
 v1 reports coarse status only (reachable / asleep / printing / last result).

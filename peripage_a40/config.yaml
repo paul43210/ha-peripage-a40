@@ -1,0 +1,27 @@
+name: PeriPage A40 Print
+version: "0.1.0"
+slug: peripage_a40
+description: App-free, cloud-free LAN printing to a PeriPage A40 thermal printer over Bluetooth.
+url: https://github.com/paul43210/ha-peripage-a40
+arch:
+  - amd64
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:printer-pos
+panel_title: PeriPage
+# Bluetooth access to the host's Sena dongle. RFCOMM (AF_BLUETOOTH) is not
+# network-namespaced, so host_dbus + NET_RAW/NET_ADMIN is expected to suffice.
+# If RFCOMM fails on first run, add `host_network: true` and re-test.
+host_dbus: true
+privileged:
+  - NET_ADMIN
+  - NET_RAW
+options:
+  printer_mac: "04:7F:0E:B0:45:18"
+  rfcomm_channel: 1
+  dither: true
+schema:
+  printer_mac: str
+  rfcomm_channel: int
+  dither: bool

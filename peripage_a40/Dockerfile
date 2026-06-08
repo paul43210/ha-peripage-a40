@@ -18,7 +18,7 @@ RUN chmod a+x /run.sh
 
 LABEL \
   io.hass.name="PeriPage A40 Print" \
-  io.hass.version="0.1.2" \
+  io.hass.version="0.1.3" \
   io.hass.type="addon" \
   io.hass.arch="amd64"
 

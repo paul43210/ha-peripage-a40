@@ -28,8 +28,7 @@ _printing = False
 _status_cache = {"ts": 0.0, "state": "unknown"}
 
 
-def _probe_state() -> str:
-    """Quick connect/disconnect probe -> 'online' | 'asleep' | 'error'."""
+def _probe_once() -> str:
     t = ppa.RfcommTransport(MAC, channel=CHANNEL, connect_timeout=PROBE_TIMEOUT)
     try:
         t.connect()
@@ -37,10 +36,21 @@ def _probe_state() -> str:
         return "online"
     except ppa.PrinterAsleep:
         return "asleep"
-    except ppa.TransportError:
-        return "error"
     except Exception:
         return "error"
+
+
+def _probe_state() -> str:
+    """Connect/disconnect probe -> 'online' | 'asleep' | 'error'.
+
+    Retries once on a transient error (e.g. the printer is briefly busy right
+    after a print closed its connection); 'asleep' is definitive, no retry.
+    """
+    st = _probe_once()
+    if st == "error":
+        time.sleep(1.0)
+        st = _probe_once()
+    return st
 
 
 def _status(force: bool = False) -> str:
@@ -172,7 +182,7 @@ $("print").addEventListener("click", async () => {
     m.className = "msg err"; m.textContent = "Request failed: " + e;
   } finally {
     $("print").disabled = !file;
-    refresh(true);
+    refresh(false);  // reflect the print's own result; don't reconnect immediately
   }
 });
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+- Fix: a successful print no longer flips the status to a false "Bluetooth
+  error". The UI now reflects the print result instead of opening a fresh
+  Bluetooth connection the instant the print connection closed.
+- Status probe retries once on a transient error.
+
 ## 0.1.2
 - Pin the core library to a commit so rebuilds actually reinstall it
   (a cached pip layer had kept the pre-fix core, so a sleeping printer

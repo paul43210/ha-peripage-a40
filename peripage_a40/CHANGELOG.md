@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.4
+- Printing is now a background job: the Print button returns immediately and
+  the page polls for the result, so a long print no longer hits the ingress
+  proxy timeout (the cause of the "<html> ... is not valid JSON" error and
+  the stuck "Printing..." status).
+- The UI handles non-JSON / error responses gracefully.
+- Core: Bluetooth send now has a timeout, so a stalled printer (out of paper
+  or jammed) ends with a clear error instead of hanging.
+
 ## 0.1.3
 - Fix: a successful print no longer flips the status to a false "Bluetooth
   error". The UI now reflects the print result instead of opening a fresh

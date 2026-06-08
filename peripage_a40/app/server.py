@@ -1,9 +1,8 @@
 """PeriPage A40 HA add-on web server.
 
-Serves a single-page upload UI behind Home Assistant ingress, probes printer
-reachability, and prints uploaded PDFs via the peripage_a40 library over RFCOMM.
-All Bluetooth access is serialized through a lock so concurrent requests never
-hit the dongle at once.
+Printing runs as a background job so the HTTP request returns immediately and
+never outlives Home Assistant's ingress proxy timeout. The page kicks off a
+print, then polls /api/status until the job finishes.
 """
 from __future__ import annotations
 
@@ -20,12 +19,23 @@ CHANNEL = int(os.environ.get("RFCOMM_CHANNEL", "1"))
 DITHER = os.environ.get("DITHER", "true").lower() in ("true", "1", "yes")
 PORT = int(os.environ.get("PORT", "8099"))
 PROBE_TIMEOUT = 4.0
-STATUS_CACHE_TTL = 15.0  # don't hammer the dongle with connect probes
+STATUS_CACHE_TTL = 15.0
 
 app = Flask(__name__)
-_bt_lock = threading.Lock()
-_printing = False
-_status_cache = {"ts": 0.0, "state": "unknown"}
+_bt_lock = threading.Lock()      # serialize ALL dongle access (print + probe)
+_job_lock = threading.Lock()
+_job = {"state": "idle", "pages": 0, "message": "", "ts": 0.0}
+_probe = {"ts": 0.0, "state": "unknown"}
+
+
+def _set_job(**kw):
+    with _job_lock:
+        _job.update(ts=time.time(), **kw)
+
+
+def _get_job():
+    with _job_lock:
+        return dict(_job)
 
 
 def _probe_once() -> str:
@@ -41,11 +51,7 @@ def _probe_once() -> str:
 
 
 def _probe_state() -> str:
-    """Connect/disconnect probe -> 'online' | 'asleep' | 'error'.
-
-    Retries once on a transient error (e.g. the printer is briefly busy right
-    after a print closed its connection); 'asleep' is definitive, no retry.
-    """
+    """online|asleep|error, retrying once on a transient error."""
     st = _probe_once()
     if st == "error":
         time.sleep(1.0)
@@ -53,18 +59,34 @@ def _probe_state() -> str:
     return st
 
 
-def _status(force: bool = False) -> str:
-    if _printing:
-        return "printing"
+def _connectivity(force: bool = False) -> str:
     now = time.time()
-    if not force and (now - _status_cache["ts"]) < STATUS_CACHE_TTL:
-        return _status_cache["state"]
-    with _bt_lock:
-        if _printing:
-            return "printing"
-        state = _probe_state()
-    _status_cache.update(ts=time.time(), state=state)
-    return state
+    if force or (now - _probe["ts"]) >= STATUS_CACHE_TTL:
+        with _bt_lock:
+            st = _probe_state()
+        _probe.update(ts=time.time(), state=st)
+    return _probe["state"]
+
+
+def _worker(path: str):
+    try:
+        with _bt_lock:
+            n = ppa.print_pdf(path, MAC, dither=DITHER, channel=CHANNEL)
+        _set_job(state="done", pages=n,
+                 message="Printed %d page%s." % (n, "" if n == 1 else "s"))
+        _probe.update(ts=time.time(), state="online")
+    except ppa.PrinterAsleep as e:
+        _set_job(state="asleep", pages=0, message=str(e))
+        _probe.update(ts=time.time(), state="asleep")
+    except ppa.TransportError as e:
+        _set_job(state="error", pages=0, message=str(e))
+    except Exception as e:
+        _set_job(state="error", pages=0, message="%s: %s" % (type(e).__name__, e))
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 INDEX_HTML = """<!doctype html>
@@ -129,6 +151,7 @@ INDEX_HTML = """<!doctype html>
 <script>
 const $ = (id) => document.getElementById(id);
 let file = null;
+let busy = false;
 
 function setStatus(state) {
   const map = {
@@ -144,45 +167,87 @@ function setStatus(state) {
   $("statusSub").textContent = pair[1];
 }
 
-async function refresh(force) {
-  setStatus("unknown"); $("statusText").textContent = "Checking...";
+function showMsg(cls, text) {
+  const m = $("msg");
+  m.className = cls ? ("msg " + cls) : "msg";
+  m.textContent = text || "";
+}
+
+async function getJSON(url, opts) {
   try {
-    const r = await fetch("api/status" + (force ? "?force=1" : ""));
-    const j = await r.json();
-    setStatus(j.state);
-    $("meta").textContent = "Printer " + j.mac + " - channel " + j.channel + " - dither " + (j.dither ? "on" : "off");
-  } catch (e) { setStatus("error"); }
+    const r = await fetch(url, opts);
+    const txt = await r.text();
+    let data = null;
+    try { data = JSON.parse(txt); } catch (e) { data = null; }
+    return { ok: r.ok, status: r.status, data: data };
+  } catch (e) {
+    return { ok: false, status: 0, data: null };
+  }
+}
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+async function refresh(force) {
+  if (busy) return;
+  setStatus("unknown"); $("statusText").textContent = "Checking...";
+  const res = await getJSON("api/status" + (force ? "?force=1" : ""));
+  if (res.data) {
+    setStatus(res.data.state);
+    $("meta").textContent = "Printer " + res.data.mac + " - channel " + res.data.channel +
+      " - dither " + (res.data.dither ? "on" : "off");
+  } else {
+    setStatus("error");
+  }
+}
+
+async function pollUntilDone() {
+  const deadline = Date.now() + 120000;
+  while (Date.now() < deadline) {
+    await sleep(1500);
+    const res = await getJSON("api/status");
+    if (!res.data) continue;
+    setStatus(res.data.state);
+    const job = res.data.job || {};
+    if (job.state && job.state !== "printing") {
+      if (job.state === "done") showMsg("ok", job.message || "Done.");
+      else if (job.state === "asleep") showMsg("warn", job.message || "Printer is asleep or off.");
+      else showMsg("err", job.message || "Print failed.");
+      return;
+    }
+  }
+  showMsg("warn", "Still working - check the printer, then tap Refresh status.");
 }
 
 $("file").addEventListener("change", (e) => {
   file = e.target.files[0] || null;
   $("fname").textContent = file ? file.name : "No file selected";
   $("print").disabled = !file;
-  $("msg").className = "msg";
+  showMsg("", "");
 });
 
 $("refresh").addEventListener("click", () => refresh(true));
 
 $("print").addEventListener("click", async () => {
-  if (!file) return;
-  $("print").disabled = true; setStatus("printing");
-  const m = $("msg"); m.className = "msg"; m.textContent = "";
-  const fd = new FormData(); fd.append("pdf", file);
+  if (!file || busy) return;
+  busy = true;
+  $("print").disabled = true;
+  setStatus("printing");
+  showMsg("", "");
   try {
-    const r = await fetch("api/print", { method: "POST", body: fd });
-    const j = await r.json();
-    if (j.ok) {
-      m.className = "msg ok"; m.textContent = "Printed " + j.pages + " page" + (j.pages === 1 ? "" : "s") + ".";
-    } else if (j.asleep) {
-      m.className = "msg warn"; m.textContent = j.error;
+    const fd = new FormData(); fd.append("pdf", file);
+    const res = await getJSON("api/print", { method: "POST", body: fd });
+    if (!res.data) {
+      showMsg("err", "Could not start the print (server error " + res.status + ").");
+    } else if (res.data.busy) {
+      showMsg("warn", res.data.error || "A print is already in progress.");
+    } else if (!res.data.ok) {
+      showMsg("err", res.data.error || "Could not start the print.");
     } else {
-      m.className = "msg err"; m.textContent = j.error;
+      await pollUntilDone();
     }
-  } catch (e) {
-    m.className = "msg err"; m.textContent = "Request failed: " + e;
   } finally {
+    busy = false;
     $("print").disabled = !file;
-    refresh(false);  // reflect the print's own result; don't reconnect immediately
   }
 });
 
@@ -200,49 +265,34 @@ def index() -> Response:
 
 @app.get("/api/status")
 def api_status():
-    force = request.args.get("force") in ("1", "true", "yes")
-    return jsonify({
-        "state": _status(force=force),
-        "mac": MAC, "channel": CHANNEL, "dither": DITHER,
-    })
+    job = _get_job()
+    if job["state"] == "printing":
+        dot = "printing"
+    else:
+        force = request.args.get("force") in ("1", "true", "yes")
+        dot = _connectivity(force=force)
+    return jsonify({"state": dot, "job": job,
+                    "mac": MAC, "channel": CHANNEL, "dither": DITHER})
 
 
 @app.post("/api/print")
 def api_print():
-    global _printing
+    if _get_job()["state"] == "printing":
+        return jsonify({"ok": False, "busy": True,
+                        "error": "A print is already in progress."}), 409
     f = request.files.get("pdf")
     if f is None or not f.filename:
         return jsonify({"ok": False, "error": "No PDF uploaded."}), 400
-
     fd, path = tempfile.mkstemp(suffix=".pdf")
     os.close(fd)
     f.save(path)
-    try:
-        with _bt_lock:
-            _printing = True
-            _status_cache.update(ts=time.time(), state="printing")
-            try:
-                n = ppa.print_pdf(path, MAC, dither=DITHER, channel=CHANNEL)
-            finally:
-                _printing = False
-        _status_cache.update(ts=time.time(), state="online")
-        return jsonify({"ok": True, "pages": n})
-    except ppa.PrinterAsleep as e:
-        _status_cache.update(ts=time.time(), state="asleep")
-        return jsonify({"ok": False, "asleep": True, "error": str(e)})
-    except ppa.TransportError as e:
-        _status_cache.update(ts=time.time(), state="error")
-        return jsonify({"ok": False, "error": str(e)})
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"})
-    finally:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+    _set_job(state="printing", pages=0, message="")
+    threading.Thread(target=_worker, args=(path,), daemon=True).start()
+    return jsonify({"ok": True, "started": True})
 
 
 if __name__ == "__main__":
     from waitress import serve
-    print(f"[peripage-a40] serving on :{PORT} (mac={MAC} ch={CHANNEL} dither={DITHER})", flush=True)
+    print("[peripage-a40] serving on :%d (mac=%s ch=%d dither=%s)"
+          % (PORT, MAC, CHANNEL, DITHER), flush=True)
     serve(app, host="0.0.0.0", port=PORT)

@@ -9,7 +9,7 @@ FROM ghcr.io/home-assistant/amd64-base-python:3.13-alpine3.23
 RUN apk add --no-cache git \
  && pip install --no-cache-dir \
       flask waitress \
-      "git+https://github.com/paul43210/peripage-a40@c936e35" \
+      "git+https://github.com/paul43210/peripage-a40@04dc4f1" \
  && apk del git
 
 COPY app /app
@@ -18,7 +18,7 @@ RUN chmod a+x /run.sh
 
 LABEL \
   io.hass.name="PeriPage A40 Print" \
-  io.hass.version="0.1.3" \
+  io.hass.version="0.1.4" \
   io.hass.type="addon" \
   io.hass.arch="amd64"
 

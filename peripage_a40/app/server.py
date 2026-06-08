@@ -25,7 +25,7 @@ app = Flask(__name__)
 _bt_lock = threading.Lock()      # serialize ALL dongle access (print + probe)
 _job_lock = threading.Lock()
 _job = {"state": "idle", "pages": 0, "message": "", "ts": 0.0}
-_probe = {"ts": 0.0, "state": "unknown"}
+_probe = {"ts": 0.0, "state": "unknown", "battery": None}
 
 
 def _set_job(**kw):
@@ -38,34 +38,34 @@ def _get_job():
         return dict(_job)
 
 
-def _probe_once() -> str:
-    t = ppa.RfcommTransport(MAC, channel=CHANNEL, connect_timeout=PROBE_TIMEOUT)
+def _probe_once():
+    """One connect: returns (state, battery%|None). Reads battery in the same
+    connection so we don't open a second one."""
     try:
-        t.connect()
-        t.close()
-        return "online"
+        batt = ppa.get_battery(MAC, channel=CHANNEL, connect_timeout=PROBE_TIMEOUT)
+        return "online", batt
     except ppa.PrinterAsleep:
-        return "asleep"
+        return "asleep", None
     except Exception:
-        return "error"
+        return "error", None
 
 
-def _probe_state() -> str:
-    """online|asleep|error, retrying once on a transient error."""
-    st = _probe_once()
+def _probe_state():
+    """(state, battery), retrying once on a transient error."""
+    st, batt = _probe_once()
     if st == "error":
         time.sleep(1.0)
-        st = _probe_once()
-    return st
+        st, batt = _probe_once()
+    return st, batt
 
 
-def _connectivity(force: bool = False) -> str:
+def _connectivity(force: bool = False):
     now = time.time()
     if force or (now - _probe["ts"]) >= STATUS_CACHE_TTL:
         with _bt_lock:
-            st = _probe_state()
-        _probe.update(ts=time.time(), state=st)
-    return _probe["state"]
+            st, batt = _probe_state()
+        _probe.update(ts=time.time(), state=st, battery=batt)
+    return _probe["state"], _probe["battery"]
 
 
 def _worker(path: str):
@@ -77,7 +77,7 @@ def _worker(path: str):
         _probe.update(ts=time.time(), state="online")
     except ppa.PrinterAsleep as e:
         _set_job(state="asleep", pages=0, message=str(e))
-        _probe.update(ts=time.time(), state="asleep")
+        _probe.update(ts=time.time(), state="asleep", battery=None)
     except ppa.TransportError as e:
         _set_job(state="error", pages=0, message=str(e))
     except Exception as e:
@@ -153,7 +153,7 @@ const $ = (id) => document.getElementById(id);
 let file = null;
 let busy = false;
 
-function setStatus(state) {
+function setStatus(state, battery) {
   const map = {
     online:   ["Printer online",  "Ready to print."],
     asleep:   ["Asleep / off",    "Press the printer power or feed button to wake it."],
@@ -163,7 +163,9 @@ function setStatus(state) {
   };
   const pair = map[state] || map.unknown;
   $("dot").className = "dot " + state;
-  $("statusText").textContent = pair[0];
+  let head = pair[0];
+  if (state === "online" && battery != null) head = "Printer online - " + battery + "%";
+  $("statusText").textContent = head;
   $("statusSub").textContent = pair[1];
 }
 
@@ -192,7 +194,7 @@ async function refresh(force) {
   setStatus("unknown"); $("statusText").textContent = "Checking...";
   const res = await getJSON("api/status" + (force ? "?force=1" : ""));
   if (res.data) {
-    setStatus(res.data.state);
+    setStatus(res.data.state, res.data.battery);
     $("meta").textContent = "Printer " + res.data.mac + " - channel " + res.data.channel +
       " - dither " + (res.data.dither ? "on" : "off");
   } else {
@@ -206,7 +208,7 @@ async function pollUntilDone() {
     await sleep(1500);
     const res = await getJSON("api/status");
     if (!res.data) continue;
-    setStatus(res.data.state);
+    setStatus(res.data.state, res.data.battery);
     const job = res.data.job || {};
     if (job.state && job.state !== "printing") {
       if (job.state === "done") showMsg("ok", job.message || "Done.");
@@ -267,11 +269,11 @@ def index() -> Response:
 def api_status():
     job = _get_job()
     if job["state"] == "printing":
-        dot = "printing"
+        dot, batt = "printing", _probe["battery"]
     else:
         force = request.args.get("force") in ("1", "true", "yes")
-        dot = _connectivity(force=force)
-    return jsonify({"state": dot, "job": job,
+        dot, batt = _connectivity(force=force)
+    return jsonify({"state": dot, "battery": batt, "job": job,
                     "mac": MAC, "channel": CHANNEL, "dither": DITHER})
 
 

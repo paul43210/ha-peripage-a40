@@ -24,6 +24,6 @@ created in the host network namespace), plus `host_dbus` and the
 `NET_ADMIN`/`NET_RAW` capabilities.
 
 ## Status scope
-v1 reports coarse status only (reachable / asleep / printing / last result).
-Battery level and paper-out are not yet decoded and will arrive in a later
-release.
+Status shows reachable / asleep / printing / last result, plus the printer's
+battery percentage when it is online. Paper-out is not decoded (it is obvious
+from the printer itself).

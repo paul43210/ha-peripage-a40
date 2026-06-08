@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+- Show the printer **battery percentage** in the status panel (queried over
+  Bluetooth in the same connection as the status check).
+
 ## 0.1.4
 - Printing is now a background job: the Print button returns immediately and
   the page polls for the result, so a long print no longer hits the ingress

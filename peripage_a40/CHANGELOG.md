@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.7
+- Remove the hard-coded default printer MAC; `printer_mac` is now required
+  and validated. The status panel shows **Not configured** until it is set.
+- Document how to find your printer's Bluetooth MAC.
+
 ## 0.1.6
 - Hardening: cap uploads at 25 MB; make the single-print guard atomic.
 - Pin the core library to the tagged release v0.1.3 (reproducible builds).

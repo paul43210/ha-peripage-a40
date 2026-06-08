@@ -73,6 +73,23 @@ job, so a long print never blocks or times out the request.
 - No credentials or secrets are stored in this repo; the printer MAC is the only
   identifier and lives in the add-on options.
 
+## Finding your printer's MAC
+
+The add-on needs your printer's Bluetooth **Classic** MAC address (format
+`AA:BB:CC:DD:EE:FF`). It does **not** scan automatically, so find it once and
+paste it into the add-on's *Configuration* tab:
+
+- **Official PeriPage app** — pair the printer, then look at its device/about
+  screen.
+- **Your phone's Bluetooth screen** — power the printer on and look for a
+  `PeriPage_A40` device; most Android phones show the address in the device
+  details (iOS hides it).
+- **A Linux box with Bluetooth** — run `bluetoothctl`, then `scan on`, and watch
+  for a line naming `PeriPage_A40`. Power-cycle the printer right before
+  scanning — it only advertises for a short window after power-on.
+
+Until a valid MAC is set, the add-on's status panel shows **Not configured**.
+
 ## Add-ons in this repository
 
 - **peripage_a40** — *PeriPage A40 Print* (web upload + status panel).

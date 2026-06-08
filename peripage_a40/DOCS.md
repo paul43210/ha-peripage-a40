@@ -11,6 +11,23 @@ printer's native page-mode protocol — no vendor app and no cloud.
 | `rfcomm_channel` | `1` | SPP channel |
 | `dither` | `true` | Floyd–Steinberg dithering for grayscale |
 
+## Finding your printer's MAC
+
+The add-on needs your printer's Bluetooth **Classic** MAC address (format
+`AA:BB:CC:DD:EE:FF`). It does **not** scan automatically, so find it once and
+paste it into the add-on's *Configuration* tab:
+
+- **Official PeriPage app** — pair the printer, then look at its device/about
+  screen.
+- **Your phone's Bluetooth screen** — power the printer on and look for a
+  `PeriPage_A40` device; most Android phones show the address in the device
+  details (iOS hides it).
+- **A Linux box with Bluetooth** — run `bluetoothctl`, then `scan on`, and watch
+  for a line naming `PeriPage_A40`. Power-cycle the printer right before
+  scanning — it only advertises for a short window after power-on.
+
+Until a valid MAC is set, the add-on's status panel shows **Not configured**.
+
 ## Using it
 
 Open the **Web UI**, choose a PDF, press **Print**. The print runs as a

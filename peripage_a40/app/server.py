@@ -7,6 +7,7 @@ print, then polls /api/status until the job finishes.
 from __future__ import annotations
 
 import os
+import re
 import time
 import tempfile
 import threading
@@ -14,7 +15,9 @@ import threading
 from flask import Flask, request, jsonify, Response
 import peripage_a40 as ppa
 
-MAC = os.environ.get("PRINTER_MAC", "04:7F:0E:B0:45:18")
+MAC = os.environ.get("PRINTER_MAC", "").strip()
+_MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+MAC_OK = bool(_MAC_RE.match(MAC))
 CHANNEL = int(os.environ.get("RFCOMM_CHANNEL", "1"))
 DITHER = os.environ.get("DITHER", "true").lower() in ("true", "1", "yes")
 PORT = int(os.environ.get("PORT", "8099"))
@@ -161,6 +164,7 @@ function setStatus(state, battery) {
     printing: ["Printing...",     "A job is in progress."],
     error:    ["Bluetooth error", "Could not reach the adapter. Check the dongle and logs."],
     unknown:  ["Unknown",         ""],
+    unconfigured: ["Not configured", "Set the printer MAC in the add-on Configuration tab, then restart."],
   };
   const pair = map[state] || map.unknown;
   $("dot").className = "dot " + state;
@@ -196,7 +200,7 @@ async function refresh(force) {
   const res = await getJSON("api/status" + (force ? "?force=1" : ""));
   if (res.data) {
     setStatus(res.data.state, res.data.battery);
-    $("meta").textContent = "Printer " + res.data.mac + " - channel " + res.data.channel +
+    $("meta").textContent = "Printer " + (res.data.mac || "(not set)") + " - channel " + res.data.channel +
       " - dither " + (res.data.dither ? "on" : "off");
   } else {
     setStatus("error");
@@ -268,6 +272,10 @@ def index() -> Response:
 
 @app.get("/api/status")
 def api_status():
+    if not MAC_OK:
+        return jsonify({"state": "unconfigured", "battery": None,
+                        "job": _get_job(), "mac": MAC or None,
+                        "channel": CHANNEL, "dither": DITHER})
     job = _get_job()
     if job["state"] == "printing":
         dot, batt = "printing", _probe["battery"]
@@ -280,6 +288,10 @@ def api_status():
 
 @app.post("/api/print")
 def api_print():
+    if not MAC_OK:
+        return jsonify({"ok": False, "error":
+                        "Set the printer Bluetooth MAC in the add-on "
+                        "Configuration tab, then restart the add-on."}), 400
     f = request.files.get("pdf")
     if f is None or not f.filename:
         return jsonify({"ok": False, "error": "No PDF uploaded."}), 400

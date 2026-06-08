@@ -1,5 +1,5 @@
 name: PeriPage A40 Print
-version: "0.1.6"
+version: "0.1.7"
 slug: peripage_a40
 description: App-free, cloud-free LAN printing to a PeriPage A40 thermal printer over Bluetooth.
 url: https://github.com/paul43210/ha-peripage-a40
@@ -19,7 +19,8 @@ privileged:
   - NET_ADMIN
   - NET_RAW
 options:
-  printer_mac: "04:7F:0E:B0:45:18"
+  # REQUIRED: set this to your printer Bluetooth MAC (see the docs).
+  printer_mac: ""
   rfcomm_channel: 1
   dither: true
 schema:

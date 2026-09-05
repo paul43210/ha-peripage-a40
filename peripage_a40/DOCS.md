@@ -7,7 +7,7 @@ printer's native page-mode protocol — no vendor app and no cloud.
 
 | Option | Default | Notes |
 |---|---|---|
-| `printer_mac` | `04:7F:0E:B0:45:18` | Classic BT MAC of the A40 |
+| `printer_mac` | _(none — required)_ | Classic BT MAC of the A40 |
 | `rfcomm_channel` | `1` | SPP channel |
 | `dither` | `true` | Floyd–Steinberg dithering for grayscale |
 

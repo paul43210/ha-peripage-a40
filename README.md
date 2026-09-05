@@ -34,7 +34,7 @@ packages it as an installable Home Assistant add-on.
 
 | Option | Default | Notes |
 |---|---|---|
-| `printer_mac` | `04:7F:0E:B0:45:18` | The A40's Bluetooth Classic MAC |
+| `printer_mac` | _(none — required)_ | The A40's Bluetooth Classic MAC |
 | `rfcomm_channel` | `1` | RFCOMM/SPP channel |
 | `dither` | `true` | Floyd–Steinberg dithering for grayscale/photos |
 

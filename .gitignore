@@ -3,3 +3,6 @@ __pycache__/
 .venv/
 *.pdf
 *.bin
+
+# Operator notes: holds the real printer MAC. Never publish -- this repo is public.
+CLAUDE.md

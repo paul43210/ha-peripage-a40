@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.8
+- Docs: correct the `printer_mac` row in both options tables. They still
+  showed a sample MAC as the "Default" even though 0.1.7 made the option
+  required with no default. No functional change.
+
 ## 0.1.7
 - Remove the hard-coded default printer MAC; `printer_mac` is now required
   and validated. The status panel shows **Not configured** until it is set.
